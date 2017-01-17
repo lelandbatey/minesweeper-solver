@@ -1,4 +1,4 @@
-package main
+package defusedivision
 
 type Cell struct {
 	Contents  string          `json:"contents"`
