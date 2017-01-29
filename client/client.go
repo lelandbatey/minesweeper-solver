@@ -35,7 +35,21 @@ type Client struct {
 	Msgs chan []byte
 }
 
-// NetReader accepts a Client and reads null-delimited gzipped messages from
+func New(host string, port string) (*Client, error) {
+	addr := fmt.Sprintf("%s:%s", host, port)
+	c, err := net.Dial("tcp", addr)
+	if err != nil {
+		return nil, err
+	}
+	rv := Client{
+		Connection: c,
+		Name:       "example",
+		Msgs:       make(chan []byte),
+	}
+	return &rv, nil
+}
+
+// NetReader accepts a Client and reads byte-sequence-delimited gzipped messages from
 // that Clients Connection, placing the uncompressed contents of each message
 // into the "Msgs" channel on the provided Client struct. It will repeat this
 // process, doing this forever until an error occurs/the Connection closes.
@@ -50,23 +64,31 @@ func NetReader(client *Client) {
 		}
 		// We definitely have at least one message, now to process that one
 		// message.
-		if bytes.Contains(tmp[:n], []byte{'\x00', '\x01', '\x00'}) {
-			inpt := []byte{}
-			inpt = append(inpt, buf...)
-			inpt = append(inpt, tmp[:n]...)
-			msgs := bytes.Split(inpt, []byte{'\x00', '\x01', '\x00'})
+		//if bytes.Contains(tmp[:n], []byte{'\x00', '\x01', '\x00'}) {
+		// possibleBuf is buffer of everything received after last msg
+		possibleBuf := []byte{}
+		possibleBuf = append(possibleBuf, buf...)
+		possibleBuf = append(possibleBuf, tmp[:n]...)
+		if bytes.Contains(possibleBuf, []byte{'\x00', '\x01', '\x00'}) {
+			msgs := bytes.Split(possibleBuf, []byte{'\x00', '\x01', '\x00'})
 
-			q.Q(len(msgs))
+			// Set buf as the beginning of the as-yet incomplete message, which
+			// may be an empty slice
+			buf = msgs[len(msgs)-1]
 			for _, m := range msgs[:len(msgs)-1] {
 				gzr, err := gzip.NewReader(bytes.NewReader(m))
 				if err != nil {
-					q.Q(err)
+					panic(err)
 					err = nil
 					continue
 				}
+				err = gzr.Close() // close gzr to fully read until EOF
+				if err != nil {
+					panic(err)
+				}
 				ungzipped, err := ioutil.ReadAll(gzr)
 				if err != nil {
-					q.Q(err)
+					panic(err)
 					err = nil
 					continue
 				}
@@ -79,18 +101,40 @@ func NetReader(client *Client) {
 	}
 }
 
-func New(host string, port string) (*Client, error) {
-	addr := fmt.Sprintf("%s:%s", host, port)
-	c, err := net.Dial("tcp", addr)
+func (c *Client) Send(toSend interface{}) error {
+	data, err := json.Marshal(toSend)
+	fmt.Printf("Data: %v\n", string(data))
 	if err != nil {
-		return nil, err
+		return err
 	}
-	rv := Client{
-		Connection: c,
-		Name:       "example",
-		Msgs:       make(chan []byte),
+	//
+	//pw = packet.NewWriter()
+	//gw := gzip.NewWriter(pw)
+	//gw.Write(data)
+	//gw.Write([]byte{'\x00', '\x01', '\x00'})
+	//
+	var packet []byte
+	tmp := bytes.NewBuffer(packet)
+
+	w := gzip.NewWriter(tmp)
+	if _, err := w.Write(data); err != nil {
+		return err
 	}
-	return &rv, nil
+	err = w.Close()
+	if err != nil {
+		return err
+	}
+	fmt.Printf("Tmp: %v\n", tmp.Bytes())
+	_, err = tmp.Write([]byte{'\x00', '\x01', '\x00'})
+	if err != nil {
+		return err
+	}
+	fmt.Printf("Packet: %v\n", tmp.Bytes())
+	_, err = tmp.WriteTo(c.Connection)
+	if err != nil {
+		return err
+	}
+	return nil
 }
 
 // Method Message will block until it returns the next message from the server.
@@ -117,6 +161,7 @@ func (c *Client) Message() interface{} {
 		// if it's not a list of stuff!
 		panic(err)
 	}
+
 	if first, ok := items[0].(string); ok {
 		if first == "new-state" {
 			thebits, err := json.Marshal(items[1])

@@ -21,5 +21,20 @@ func main() {
 	}
 	fmt.Printf("We did it, we opened a client named %s!\n", c.Name)
 	q.Q("Now we wait for a message:")
+	//spew.Dump(c.Message())
+	c.Message()
+	c.Send("RIGHT")
+	//time.Sleep(400 * time.Millisecond)
 	spew.Dump(c.Message())
+	c.Send("RIGHT")
+	//time.Sleep(400 * time.Millisecond)
+	c.Send("RIGHT")
+	//time.Sleep(400 * time.Millisecond)
+	c.Send("RIGHT")
+	//time.Sleep(400 * time.Millisecond)
+	fmt.Println("We are waiting for a message:")
+	spew.Dump(c.Message())
+	fmt.Println("We successfully read a message!")
+	c.Send("PROBE")
+	spew.Dump(c.Message()) // don't exit just yet or else we won't see the changes
 }
