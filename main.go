@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"os"
+	"time"
 
 	"github.com/lelandbatey/minesweeper-solver/client"
 
@@ -24,17 +25,18 @@ func main() {
 	//spew.Dump(c.Message())
 	c.Message()
 	c.Send("RIGHT")
-	//time.Sleep(400 * time.Millisecond)
-	spew.Dump(c.Message())
+	time.Sleep(400 * time.Millisecond)
+	//spew.Dump(c.Message())
 	c.Send("RIGHT")
-	//time.Sleep(400 * time.Millisecond)
+	time.Sleep(400 * time.Millisecond)
 	c.Send("RIGHT")
-	//time.Sleep(400 * time.Millisecond)
+	time.Sleep(400 * time.Millisecond)
 	c.Send("RIGHT")
-	//time.Sleep(400 * time.Millisecond)
+	time.Sleep(400 * time.Millisecond)
 	fmt.Println("We are waiting for a message:")
 	spew.Dump(c.Message())
 	fmt.Println("We successfully read a message!")
 	c.Send("PROBE")
+	time.Sleep(1 * time.Second)
 	spew.Dump(c.Message()) // don't exit just yet or else we won't see the changes
 }

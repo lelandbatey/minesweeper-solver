@@ -103,16 +103,10 @@ func NetReader(client *Client) {
 
 func (c *Client) Send(toSend interface{}) error {
 	data, err := json.Marshal(toSend)
-	fmt.Printf("Data: %v\n", string(data))
 	if err != nil {
 		return err
 	}
-	//
-	//pw = packet.NewWriter()
-	//gw := gzip.NewWriter(pw)
-	//gw.Write(data)
-	//gw.Write([]byte{'\x00', '\x01', '\x00'})
-	//
+
 	var packet []byte
 	tmp := bytes.NewBuffer(packet)
 
@@ -124,12 +118,10 @@ func (c *Client) Send(toSend interface{}) error {
 	if err != nil {
 		return err
 	}
-	fmt.Printf("Tmp: %v\n", tmp.Bytes())
 	_, err = tmp.Write([]byte{'\x00', '\x01', '\x00'})
 	if err != nil {
 		return err
 	}
-	fmt.Printf("Packet: %v\n", tmp.Bytes())
 	_, err = tmp.WriteTo(c.Connection)
 	if err != nil {
 		return err
