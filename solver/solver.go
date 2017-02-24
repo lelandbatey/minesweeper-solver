@@ -1,6 +1,7 @@
 package solver
 
 import (
+	"fmt"
 	"sort"
 
 	"github.com/lelandbatey/minesweeper-solver/defusedivision"
@@ -12,7 +13,10 @@ import (
 // a player.
 
 type Cell struct {
-	MineProb  float64
+	// The probability that *this* cell contains a mine, as accumulated from
+	// it's neighbors.
+	MineProb float64
+	// The number of neighbors which contain a mine
 	MineTouch int
 	X         int
 	Y         int
@@ -24,7 +28,9 @@ type Cell struct {
 type Minefield struct {
 	Height int
 	Width  int
-	Cells  []*Cell
+	// Cells will be a correctly-sorted slice of pointers to
+	// limited-information Cells.
+	Cells []*Cell
 }
 
 type Player struct {
@@ -49,6 +55,7 @@ func (c ByCoords) Swap(i, j int) {
 	c[i], c[j] = c[j], c[i]
 }
 func (c ByCoords) Less(i, j int) bool {
+	// return true if (Y,X) < (Y2,X2)
 	if c[i].Y < c[j].Y {
 		return true
 	}
@@ -63,7 +70,7 @@ func (c ByCoords) Less(i, j int) bool {
 
 func NewMinefield(mf defusedivision.Minefield) (*Minefield, error) {
 	var Cells []*Cell
-	// Sort the incoming Cells by thier X, Y coordinates
+	// Sort the incoming Cells by their X, Y coordinates
 	sort.Sort(ByCoords(mf.Cells))
 	for _, c := range mf.Cells {
 		nc, err := NewCell(c)
@@ -78,6 +85,7 @@ func NewMinefield(mf defusedivision.Minefield) (*Minefield, error) {
 		Cells:  Cells,
 	}
 	// Build each Cell's record of its neighbors
+	// (This is the "second sweep" for NewCell)
 	deltas := map[string][]int{
 		"N":  []int{0, -1},
 		"S":  []int{0, 1},
@@ -103,6 +111,7 @@ func NewMinefield(mf defusedivision.Minefield) (*Minefield, error) {
 				continue
 			}
 			// offset is converting 2D coordinates (x,y) into 1D
+			// since m.Cells is a linear array
 			offset := X + Y*m.Width
 			neighbor := m.Cells[offset]
 			c.Neighbors[direction] = neighbor
@@ -124,7 +133,7 @@ func NewCell(ddc *defusedivision.Cell) (*Cell, error) {
 		}
 	}
 	c := Cell{
-		MineProb:  0.0,
+		MineProb:  -1.0,
 		MineTouch: minetouch,
 		X:         ddc.X,
 		Y:         ddc.Y,
@@ -134,4 +143,26 @@ func NewCell(ddc *defusedivision.Cell) (*Cell, error) {
 		Neighbors: map[string]*Cell{},
 	}
 	return &c, nil
+}
+
+func (mf *Minefield) Render() string {
+	rv := ""
+	for _, c := range mf.Cells {
+		if c.MineProb == -1.0 {
+			rv += " ?  "
+		} else if c.Probed {
+			if c.MineTouch == 0 {
+				rv += " .  "
+			} else {
+				rv += fmt.Sprintf(" %d  ", c.MineTouch)
+			}
+		} else {
+			rv += fmt.Sprintf("%.1f ", c.MineProb)
+		}
+		if c.X == mf.Width-1 {
+			rv += "\n\n"
+		}
+	}
+	rv += "\n"
+	return rv
 }

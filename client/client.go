@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io/ioutil"
 	"net"
+	"time"
 
 	"github.com/lelandbatey/minesweeper-solver/defusedivision"
 	"github.com/y0ssar1an/q"
@@ -131,9 +132,16 @@ func (c *Client) Send(toSend interface{}) error {
 
 // Method Message will block until it returns the next message from the server.
 // That return value is an interface of either type Player, type State, or a
-// slice of interfaces (an 'update-selected' message).
+// slice of interfaces (an 'update-selected' message). If a timeout occurs,
+// returns nil.
 func (c *Client) Message() interface{} {
-	msg := <-c.Msgs
+	// Try to read a message for 50 ms, then time out
+	var msg []byte
+	select {
+	case msg = <-c.Msgs:
+	case <-time.After(500 * time.Millisecond):
+		return nil
+	}
 
 	q.Q(string(msg))
 	// Check if the server sent a 'configuration' message, a Player object
