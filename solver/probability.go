@@ -1,7 +1,34 @@
 package solver
 
+/* let's talk about symantics. When we say "Primed Field", we refer to a
+ * minefield that has been partially exposed. The cells bordering on numbers
+ * are "primed" because they may or may not contain a mine, and we therefore
+ * call it primed because it's potentially an explodable mine
+ */
+
+func UnflaggedMines(mf *Minefield) []*Cell {
+	unflagged := []*Cell{}
+	for _, cell := range mf.Cells {
+		if cell.MineProb == 1.0 && !cell.Flagged {
+			unflagged = append(unflagged, cell)
+		}
+	}
+	return unflagged
+}
+
+// fully calculate minefield probability given current conditions
+// this modified the minefiled by pointer, so nothing needs returning
+func PrimedFieldProbability(mf *Minefield) {
+	for IterPrimedFieldProbability(mf) == true {
+	}
+	return
+}
+
 // calculate probability on all cells bordering probed cells
-func PrimedFieldProbability(mf *Minefield) bool {
+// It returns each iteration with a boolean indicating that it still has
+// calculations to do. This is because it must recalculate the board after
+// it calculates with 100% certainty that a particular cell has a mine.
+func IterPrimedFieldProbability(mf *Minefield) bool {
 	dirtyProbability := false
 
 	primedCells := map[[2]int]*Cell{}

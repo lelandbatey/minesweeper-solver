@@ -16,6 +16,8 @@ import (
 
 func main() {
 
+	// add default arguments to connect to local-server if none supplied
+	os.Args = append(os.Args, "127.0.0.1", "44444")
 	host := os.Args[1]
 	port := os.Args[2]
 	c, err := client.New(host, port)
@@ -31,12 +33,9 @@ func main() {
 	c.Message()
 	// The second message will be the full state from the server.
 	fmt.Printf("%v\n", reflect.TypeOf(c.Message()))
-	c.Send("RIGHT")
-	fmt.Printf("%v\n", reflect.TypeOf(c.Message()))
-	c.Send("RIGHT")
-	fmt.Printf("%v\n", reflect.TypeOf(c.Message()))
-	c.Send("RIGHT")
-	fmt.Printf("%v\n", reflect.TypeOf(c.Message()))
+	c.MoveRight()
+	c.MoveRight()
+	c.MoveRight()
 	c.Send("PROBE")
 
 	// Will contain a new state
@@ -49,20 +48,27 @@ func main() {
 		panic(err)
 	}
 	_ = sboard
-	for solver.PrimedFieldProbability(sboard) == true {
-	}
-	//solver.PrimedFieldProbability(sboard)
+	// find the probability of cells containing a mine
+	solver.PrimedFieldProbability(sboard)
 	fmt.Println(sboard.Render())
 
+	for _, unflaggedCell := range solver.UnflaggedMines(sboard) {
+		c.MoveToCell(unflaggedCell)
+		time.Sleep(400 * time.Millisecond)
+		c.Send("FLAG")
+		time.Sleep(400 * time.Millisecond)
+	}
+
+	// and now it looks like we again step to the right
 	time.Sleep(400 * time.Millisecond)
 
-	c.Send("RIGHT")
+	c.MoveRight()
 	time.Sleep(400 * time.Millisecond)
-	c.Send("RIGHT")
+	c.MoveRight()
 	time.Sleep(400 * time.Millisecond)
-	c.Send("RIGHT")
+	c.MoveRight()
 	time.Sleep(400 * time.Millisecond)
-	c.Send("RIGHT")
+	c.MoveRight()
 	time.Sleep(400 * time.Millisecond)
 	fmt.Println("We are waiting for a message:")
 	spew.Dump(c.Message())

@@ -9,7 +9,7 @@ import (
 
 // Minefield contains a more "limited" view of a minefield within a game of
 // minesweeper. Instead of *all* the information about the state of each cell,
-// it will have more limited info based on what we could see if we where purely
+// it will have more limited info based on what we could see if we were purely
 // a player.
 
 type Cell struct {
@@ -101,7 +101,7 @@ func NewMinefield(mf defusedivision.Minefield) (*Minefield, error) {
 			dX, dY := delta[0], delta[1]
 			Y := c.Y + dY
 			X := c.X + dX
-			// check bounds
+			// check bounds: skip if (Y,X) is out-of-bounds of minefield
 			if Y >= mf.Height || Y < 0 {
 				c.Neighbors[direction] = nil
 				continue

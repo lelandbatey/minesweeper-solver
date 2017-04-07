@@ -9,9 +9,11 @@ import (
 	"fmt"
 	"io/ioutil"
 	"net"
+	"reflect"
 	"time"
 
 	"github.com/lelandbatey/minesweeper-solver/defusedivision"
+	"github.com/lelandbatey/minesweeper-solver/solver"
 	"github.com/y0ssar1an/q"
 )
 
@@ -34,6 +36,8 @@ type Client struct {
 	// will match the name of the Player.
 	Name string
 	Msgs chan []byte
+	X    int
+	Y    int
 }
 
 func New(host string, port string) (*Client, error) {
@@ -46,6 +50,8 @@ func New(host string, port string) (*Client, error) {
 		Connection: c,
 		Name:       "example",
 		Msgs:       make(chan []byte),
+		X:          0,
+		Y:          0,
 	}
 	return &rv, nil
 }
@@ -100,6 +106,57 @@ func NetReader(client *Client) {
 		}
 
 	}
+}
+
+// move* functions send a command to client, then consume the
+// corresponding confirmation message
+func (c *Client) MoveUp() error {
+	err := c.Send("UP")
+	c.Y = c.Y - 1
+	fmt.Printf("%v\n", reflect.TypeOf(c.Message()))
+	return err
+}
+func (c *Client) MoveDown() error {
+	err := c.Send("DOWN")
+	c.Y = c.Y + 1
+	fmt.Printf("%v\n", reflect.TypeOf(c.Message()))
+	return err
+}
+func (c *Client) MoveLeft() error {
+	err := c.Send("LEFT")
+	c.X = c.X - 1
+	fmt.Printf("%v\n", reflect.TypeOf(c.Message()))
+	return err
+}
+func (c *Client) MoveRight() error {
+	err := c.Send("RIGHT")
+	c.X = c.X + 1
+	fmt.Printf("%v\n", reflect.TypeOf(c.Message()))
+	return err
+}
+
+// WARNING. I'm using *solver.Cell. Almost all of the other client
+// functions use defusedivision.* structs. I'd like this to accept a
+// generic interface that supports both Cell types (since it only needs
+// X and Y components). Is there a way to do that?
+func (c *Client) MoveToCell(cell *solver.Cell) error {
+	// move up to cell
+	for c.Y > cell.Y {
+		c.MoveUp()
+	}
+	// move down to cell
+	for c.Y < cell.Y {
+		c.MoveDown()
+	}
+	// move left to cell
+	for c.X > cell.X {
+		c.MoveLeft()
+	}
+	// move right to cell
+	for c.X < cell.X {
+		c.MoveRight()
+	}
+	return nil
 }
 
 func (c *Client) Send(toSend interface{}) error {
