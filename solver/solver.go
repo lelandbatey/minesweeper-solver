@@ -124,8 +124,14 @@ func NewMinefield(mf defusedivision.Minefield) (*Minefield, error) {
 func NewCell(ddc *defusedivision.Cell) (*Cell, error) {
 	var minetouch int
 	if !ddc.Probed {
+		// we COULD calculate minetouch like below even for this cell
+		// but we don't because we aren't supposed to know how many mines
+		// an unrevealed cell touches
 		minetouch = -1
 	} else {
+		// ddc.Neighbors is a map of neighbor-direction and boolean
+		// indicating if it contains a mine or not. We only want
+		// info to tally up how many mines a revealed-cell is touching
 		for _, val := range ddc.Neighbors {
 			if val != nil && *val == true {
 				minetouch += 1

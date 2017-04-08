@@ -6,6 +6,40 @@ package solver
  * call it primed because it's potentially an explodable mine
  */
 
+func GetSafestCell(mf *Minefield) *Cell {
+	unprobed := GetUnmarkedCells(mf)
+	var safest *Cell = nil
+	for _, cell := range unprobed {
+		// skip iteration if we have an unkown mine probability
+		// (means it's far away from revealed #'s)
+		// This effectively filters out all non-primed cells
+		if cell.MineProb == -1.0 {
+			continue
+		}
+		if safest == nil {
+			safest = cell
+		}
+		// keep trading safest with cell of lesser MineProb.
+		// this has the effect that we'll choose the safest, lowest (x,y) cell
+		// due to how we iterate with increasing x,y coords
+		if cell.MineProb < safest.MineProb {
+			safest = cell
+		}
+	}
+	return safest
+}
+
+// return "unmarked" cells that have neither been probed nor flagged
+func GetUnmarkedCells(mf *Minefield) []*Cell {
+	unprobed := []*Cell{}
+	for _, cell := range mf.Cells {
+		if !cell.Probed && !cell.Flagged {
+			unprobed = append(unprobed, cell)
+		}
+	}
+	return unprobed
+}
+
 func UnflaggedMines(mf *Minefield) []*Cell {
 	unflagged := []*Cell{}
 	for _, cell := range mf.Cells {
@@ -31,6 +65,9 @@ func PrimedFieldProbability(mf *Minefield) {
 func IterPrimedFieldProbability(mf *Minefield) bool {
 	dirtyProbability := false
 
+	// primed cells is a map of (x,y) to cell which gives us unique cells
+	// due to the fact that re-adding the same cell will overwrite itself
+	// because the key (x,y) is the same
 	primedCells := map[[2]int]*Cell{}
 	for _, cell := range mf.Cells {
 		if cell.Probed {

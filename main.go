@@ -32,31 +32,44 @@ func main() {
 	// the player sent by the server.
 	c.Message()
 	// The second message will be the full state from the server.
+	time.Sleep(400 * time.Millisecond)
 	fmt.Printf("%v\n", reflect.TypeOf(c.Message()))
 	c.MoveRight()
+	c.MoveDown()
 	c.MoveRight()
+	c.MoveDown()
 	c.MoveRight()
-	c.Send("PROBE")
-
-	// Will contain a new state
-	msg := c.Message()
-	state := msg.(defusedivision.State)
-	player := state.Players[c.Name]
-	board := player.Field
-	sboard, err := solver.NewMinefield(board)
-	if err != nil {
-		panic(err)
-	}
-	_ = sboard
-	// find the probability of cells containing a mine
-	solver.PrimedFieldProbability(sboard)
-	fmt.Println(sboard.Render())
-
-	for _, unflaggedCell := range solver.UnflaggedMines(sboard) {
-		c.MoveToCell(unflaggedCell)
+	for {
 		time.Sleep(400 * time.Millisecond)
-		c.Send("FLAG")
-		time.Sleep(400 * time.Millisecond)
+		c.Send("PROBE")
+
+		// Will contain a new state
+		msg := c.Message()
+		state := msg.(defusedivision.State)
+		player := state.Players[c.Name]
+		board := player.Field
+		sboard, err := solver.NewMinefield(board)
+		if err != nil {
+			panic(err)
+		}
+		_ = sboard
+		// find the probability of cells containing a mine
+		solver.PrimedFieldProbability(sboard)
+		fmt.Println(sboard.Render())
+
+		// flag all cells that 100% contain a mine
+		for _, unflaggedCell := range solver.UnflaggedMines(sboard) {
+			c.MoveToCell(unflaggedCell)
+			time.Sleep(400 * time.Millisecond)
+			c.Send("FLAG")
+			fmt.Printf("%v\n", reflect.TypeOf(c.Message()))
+			time.Sleep(400 * time.Millisecond)
+		}
+
+		// find lowest-probability cell to probe
+		safest := solver.GetSafestCell(sboard)
+		fmt.Printf("%v\n", safest.MineProb)
+		c.MoveToCell(safest)
 	}
 
 	// and now it looks like we again step to the right
