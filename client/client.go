@@ -13,7 +13,6 @@ import (
 	"time"
 
 	"github.com/lelandbatey/minesweeper-solver/defusedivision"
-	"github.com/lelandbatey/minesweeper-solver/solver"
 	"github.com/y0ssar1an/q"
 )
 
@@ -139,21 +138,21 @@ func (c *Client) MoveRight() error {
 // functions use defusedivision.* structs. I'd like this to accept a
 // generic interface that supports both Cell types (since it only needs
 // X and Y components). Is there a way to do that?
-func (c *Client) MoveToCell(cell *solver.Cell) error {
+func (c *Client) MoveToXY(X int, Y int) error {
 	// move up to cell
-	for c.Y > cell.Y {
+	for c.Y > Y {
 		c.MoveUp()
 	}
 	// move down to cell
-	for c.Y < cell.Y {
+	for c.Y < Y {
 		c.MoveDown()
 	}
 	// move left to cell
-	for c.X > cell.X {
+	for c.X > X {
 		c.MoveLeft()
 	}
 	// move right to cell
-	for c.X < cell.X {
+	for c.X < X {
 		c.MoveRight()
 	}
 	return nil

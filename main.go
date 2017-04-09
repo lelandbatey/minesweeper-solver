@@ -59,7 +59,9 @@ func main() {
 
 		// flag all cells that 100% contain a mine
 		for _, unflaggedCell := range solver.UnflaggedMines(sboard) {
-			c.MoveToCell(unflaggedCell)
+			x := unflaggedCell.X
+			y := unflaggedCell.Y
+			c.MoveToXY(x, y)
 			time.Sleep(400 * time.Millisecond)
 			c.Send("FLAG")
 			fmt.Printf("%v\n", reflect.TypeOf(c.Message()))
@@ -68,8 +70,47 @@ func main() {
 
 		// find lowest-probability cell to probe
 		safest := solver.GetSafestCell(sboard)
+		// if probability isn't 0, then we should try hypothetical scenarios
+		// to see if we can nail down a cell that cannot be a mine
+		// we do this by setting a mine probability to 1.0 and then running
+		// running the probability calculations. Then we ask if any
+		// "impossible" scenario has happened: such as too many nearby
+		// mines...
+		// If so, then our hypothetical mine cannot be a mine, since it
+		// violates our knowledge of the board by putting too many mines
+		// nearby a revealed #
+		if safest.MineProb > 0.0 {
+			primedCells := solver.GetPrimedCells(sboard)
+			for _, hypothetical := range primedCells {
+				// skip altering a cell whose mine-status is already determined
+				if hypothetical.MineProb == 0.0 ||
+					hypothetical.MineProb == 1.0 {
+					continue
+				}
+				savestate := solver.PreserveProbabilities(sboard)
+				// mark this cell as a mine
+				hypothetical.MineProb = 1.0
+				// re-calculate probabilities... See if this is possible
+				solver.PrimedFieldProbability(sboard)
+				// do these probabilities have an error?
+				hasError := solver.HasImpossibleProbability(sboard)
+				// but first -- restore probabilities before manipulation
+				solver.RestoreProbabilities(sboard, savestate)
+				if hasError {
+					// this is it! This cell cannot be a mine...
+					// so let's probe this cell instead of our previously
+					// calculated low-probability mine
+					fmt.Printf("found a hypothetical non-mine at ")
+					fmt.Printf("(%v, %v)\n", safest.X, safest.Y)
+					safest = hypothetical
+					break
+				}
+			}
+		}
 		fmt.Printf("%v\n", safest.MineProb)
-		c.MoveToCell(safest)
+		x := safest.X
+		y := safest.Y
+		c.MoveToXY(x, y)
 	}
 
 	// and now it looks like we again step to the right

@@ -1,5 +1,7 @@
 package solver
 
+import "errors"
+
 /* let's talk about symantics. When we say "Primed Field", we refer to a
  * minefield that has been partially exposed. The cells bordering on numbers
  * are "primed" because they may or may not contain a mine, and we therefore
@@ -65,6 +67,20 @@ func PrimedFieldProbability(mf *Minefield) {
 func IterPrimedFieldProbability(mf *Minefield) bool {
 	dirtyProbability := false
 
+	primedCells := GetPrimedCells(mf)
+	// first pass calculating probabilities
+	for _, omega := range primedCells {
+		prob := MineProbability(omega)
+		if prob == 1.0 && omega.MineProb != 1.0 {
+			// omega has just been declared a mine! Recalculate board
+			dirtyProbability = true
+		}
+		omega.MineProb = prob
+	}
+	return dirtyProbability
+}
+
+func GetPrimedCells(mf *Minefield) []*Cell {
 	// primed cells is a map of (x,y) to cell which gives us unique cells
 	// due to the fact that re-adding the same cell will overwrite itself
 	// because the key (x,y) is the same
@@ -80,16 +96,28 @@ func IterPrimedFieldProbability(mf *Minefield) bool {
 			}
 		}
 	}
-	// first pass calculating probabilities
-	for _, omega := range primedCells {
-		prob := MineProbability(omega)
-		if prob == 1.0 && omega.MineProb != 1.0 {
-			// omega has just been declared a mine! Recalculate board
-			dirtyProbability = true
-		}
-		omega.MineProb = prob
+	pcells := []*Cell{}
+	for _, cell := range primedCells {
+		pcells = append(pcells, cell)
 	}
-	return dirtyProbability
+	return pcells
+}
+
+// function to save the probabilities for later restoring
+// use this when diving into hypothetical scenarios
+func PreserveProbabilities(mf *Minefield) []float64 {
+	probs := []float64{}
+	for _, cell := range mf.Cells {
+		probs = append(probs, cell.MineProb)
+	}
+	return probs
+}
+
+// function to restore probabilities on a minefield
+func RestoreProbabilities(mf *Minefield, probs []float64) {
+	for i, cell := range mf.Cells {
+		cell.MineProb = probs[i]
+	}
 }
 
 // MineProbability accepts a Cell (omega) and calculates the probability that
@@ -103,18 +131,18 @@ func MineProbability(omega *Cell) float64 {
 	validNeighborsCount := 0
 	probSum := 0.0
 	for _, neighbor := range omega.Neighbors {
-		// Neighbors touching zero mines are neighbors we know nothing about.
+		// avoid counting unknown neighbors
 		if neighbor == nil || neighbor.MineTouch == -1 {
 			continue
 		}
 		validNeighborsCount += 1
-		prob := GetNeighborsUnknownProbability(neighbor)
+		// this probed neighbor now queries its neighbors to determine the
+		// # of surrounding un-accounted-for mines
+		prob, _ := GetNeighborsUnknownProbability(neighbor)
 		if prob == 1.0 || prob == 0.0 {
 			return prob
 		}
 		probSum += prob
-		// this neighbor now queries its neighbors to determine the # of
-		// surrounding un-accounted-for mines
 	}
 	// return an average of the reported probabilities
 	return probSum / float64(validNeighborsCount)
@@ -122,7 +150,7 @@ func MineProbability(omega *Cell) float64 {
 
 // GetNeighborsUnknownProbability accepts a cell (gamma) and returns the
 // probability of gamma's unknown neighbors containing mines.
-func GetNeighborsUnknownProbability(gamma *Cell) float64 {
+func GetNeighborsUnknownProbability(gamma *Cell) (float64, error) {
 	neighborsCount := 0
 	unknownNeighborsCount := 0
 	unknownMinesCount := gamma.MineTouch
@@ -141,12 +169,32 @@ func GetNeighborsUnknownProbability(gamma *Cell) float64 {
 			unknownMinesCount -= 1
 		}
 	}
-	if unknownMinesCount <= 0 {
-		return 0
+	if unknownMinesCount == 0 {
+		return 0, nil
+	}
+	if unknownMinesCount < 0 {
+		// this is where we've calculated an impossibility. If < 0, that means
+		// we've run into a situation where we expect X mines, but have
+		// marked X + 1 mines nearby. So this means we have something
+		// incorrectly marked. Usually this means we've marked a mine where
+		// there is None, but it could also be an issue from if we've altered
+		// the MineTouch property
+		return 0, errors.New("we've found a wrong calculation!")
 	}
 	if unknownNeighborsCount == 0 {
-		return 0
+		return 0, nil
 	}
 	// probability that unknown neighbors contain a mine
-	return float64(unknownMinesCount) / float64(unknownNeighborsCount)
+	return float64(unknownMinesCount) / float64(unknownNeighborsCount), nil
+}
+
+// find if the minefield has a calculation problem.
+func HasImpossibleProbability(mf *Minefield) bool {
+	for _, cell := range mf.Cells {
+		_, err := GetNeighborsUnknownProbability(cell)
+		if err != nil {
+			return true
+		}
+	}
+	return false
 }
