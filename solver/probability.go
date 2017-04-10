@@ -162,7 +162,7 @@ func GetNeighborsUnknownProbability(gamma *Cell) (float64, error) {
 		if cell.Probed {
 			continue
 		}
-		if cell.MineProb != 1.0 || cell.MineProb != 0.0 {
+		if cell.MineProb != 1.0 && cell.MineProb != 0.0 {
 			unknownNeighborsCount += 1
 		}
 		if cell.MineProb == 1.0 {

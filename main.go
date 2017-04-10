@@ -6,11 +6,10 @@ import (
 	"reflect"
 	"time"
 
+	//"github.com/davecgh/go-spew/spew"
 	"github.com/lelandbatey/minesweeper-solver/client"
 	"github.com/lelandbatey/minesweeper-solver/defusedivision"
 	"github.com/lelandbatey/minesweeper-solver/solver"
-
-	"github.com/davecgh/go-spew/spew"
 	"github.com/y0ssar1an/q"
 )
 
@@ -25,6 +24,7 @@ func main() {
 	if err != nil {
 		panic(err)
 	}
+	time.Sleep(400 * time.Millisecond)
 	fmt.Printf("We did it, we opened a client named %s!\n", c.Name)
 	q.Q("Now we wait for a message:")
 	// Get the first message, which is the player struct for ourself. This also
@@ -32,21 +32,30 @@ func main() {
 	// the player sent by the server.
 	c.Message()
 	// The second message will be the full state from the server.
-	time.Sleep(400 * time.Millisecond)
+	//	c.Send(`
+	//{
+	//	"new-minefield": {
+	//		"height": 25,
+	//		"width": 25,
+	//		"mine_count": 80
+	//	}
+	//}
+	//	`)
+	//	spew.Dump(c.Message())
+	//	time.Sleep(400 * time.Millisecond)
 	fmt.Printf("%v\n", reflect.TypeOf(c.Message()))
-	c.MoveRight()
-	c.MoveDown()
-	c.MoveRight()
-	c.MoveDown()
-	c.MoveRight()
+	state := defusedivision.State{}
 	for {
 		time.Sleep(400 * time.Millisecond)
 		c.Send("PROBE")
 
 		// Will contain a new state
 		msg := c.Message()
-		state := msg.(defusedivision.State)
+		state = msg.(defusedivision.State)
 		player := state.Players[c.Name]
+		if player.Living == false {
+			break
+		}
 		board := player.Field
 		sboard, err := solver.NewMinefield(board)
 		if err != nil {
@@ -100,34 +109,21 @@ func main() {
 					// this is it! This cell cannot be a mine...
 					// so let's probe this cell instead of our previously
 					// calculated low-probability mine
-					fmt.Printf("found a hypothetical non-mine at ")
-					fmt.Printf("(%v, %v)\n", safest.X, safest.Y)
+					fmt.Printf("found a hypothetical non-mine of ")
 					safest = hypothetical
 					break
 				}
 			}
 		}
-		fmt.Printf("%v\n", safest.MineProb)
+		fmt.Printf("%v @ ", safest.MineProb)
 		x := safest.X
 		y := safest.Y
+		fmt.Printf("(%v, %v)\n", x, y)
 		c.MoveToXY(x, y)
 	}
 
 	// and now it looks like we again step to the right
 	time.Sleep(400 * time.Millisecond)
-
-	c.MoveRight()
-	time.Sleep(400 * time.Millisecond)
-	c.MoveRight()
-	time.Sleep(400 * time.Millisecond)
-	c.MoveRight()
-	time.Sleep(400 * time.Millisecond)
-	c.MoveRight()
-	time.Sleep(400 * time.Millisecond)
-	fmt.Println("We are waiting for a message:")
-	spew.Dump(c.Message())
-	fmt.Println("We successfully read a message!")
-	c.Send("PROBE")
-	time.Sleep(1 * time.Second)
-	spew.Dump(c.Message()) // don't exit just yet or else we won't see the changes
+	//	spew.Dump(state)
+	time.Sleep(10 * time.Second)
 }
