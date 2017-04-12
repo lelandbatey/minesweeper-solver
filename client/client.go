@@ -9,7 +9,7 @@ import (
 	"fmt"
 	"io/ioutil"
 	"net"
-	"reflect"
+	//"reflect"
 	"time"
 
 	"github.com/lelandbatey/minesweeper-solver/defusedivision"
@@ -112,25 +112,26 @@ func NetReader(client *Client) {
 func (c *Client) MoveUp() error {
 	err := c.Send("UP")
 	c.Y = c.Y - 1
-	fmt.Printf("%v\n", reflect.TypeOf(c.Message()))
+	// a confirmation is sent back after the movement is recieved. Discard it
+	c.Message()
 	return err
 }
 func (c *Client) MoveDown() error {
 	err := c.Send("DOWN")
 	c.Y = c.Y + 1
-	fmt.Printf("%v\n", reflect.TypeOf(c.Message()))
+	c.Message()
 	return err
 }
 func (c *Client) MoveLeft() error {
 	err := c.Send("LEFT")
 	c.X = c.X - 1
-	fmt.Printf("%v\n", reflect.TypeOf(c.Message()))
+	c.Message()
 	return err
 }
 func (c *Client) MoveRight() error {
 	err := c.Send("RIGHT")
 	c.X = c.X + 1
-	fmt.Printf("%v\n", reflect.TypeOf(c.Message()))
+	c.Message()
 	return err
 }
 

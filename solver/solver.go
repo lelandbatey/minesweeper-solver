@@ -151,6 +151,11 @@ func NewCell(ddc *defusedivision.Cell) (*Cell, error) {
 	return &c, nil
 }
 
+// return a string representation of the minefield
+// " . " indicates emtpy region. " ? " indicates unexplored
+// "0.z" indicates probability of containing a mine
+// " Y " indicates a witness. These #'s you see on the board indicating nearby mines
+// " X " indicates a 100% mine
 func (mf *Minefield) Render() string {
 	rv := ""
 	for _, c := range mf.Cells {
@@ -163,7 +168,11 @@ func (mf *Minefield) Render() string {
 				rv += fmt.Sprintf(" %d  ", c.MineTouch)
 			}
 		} else {
-			rv += fmt.Sprintf("%.1f ", c.MineProb)
+			if c.MineProb == 1.0 {
+				rv += fmt.Sprintf(" ╬  ")
+			} else {
+				rv += fmt.Sprintf("%.1f ", c.MineProb)
+			}
 		}
 		if c.X == mf.Width-1 {
 			rv += "\n\n"
