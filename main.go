@@ -32,6 +32,8 @@ func main() {
 	// the player sent by the server.
 	c.Message()
 	// The second message will be the full state from the server.
+	fmt.Printf("%v\n", reflect.TypeOf(c.Message()))
+	// now we try to send a config to resize the minefield
 	//	c.Send(`
 	//{
 	//	"new-minefield": {
@@ -43,19 +45,16 @@ func main() {
 	//	`)
 	//	spew.Dump(c.Message())
 	//	time.Sleep(400 * time.Millisecond)
-	fmt.Printf("%v\n", reflect.TypeOf(c.Message()))
 	state := defusedivision.State{}
+	_ = state
+	player := defusedivision.Player{}
+	x := 0
+	y := 0
 	for {
-		time.Sleep(400 * time.Millisecond)
-		c.Send("PROBE")
+		// ProbeXY also updates the status of x,y, & living
+		state, player, _ = c.ProbeXY(x, y)
 
-		// Will contain a new state
-		msg := c.Message()
-		state = msg.(defusedivision.State)
-		player := state.Players[c.Name]
-		x := player.Field.Selected[0]
-		y := player.Field.Selected[1]
-		if player.Living == false {
+		if c.Living == false {
 			fmt.Printf("aw... Exploded @ (%v, %v)\n", x, y)
 			break
 		}
@@ -64,7 +63,6 @@ func main() {
 		if err != nil {
 			panic(err)
 		}
-		_ = sboard
 		// find the probability of cells containing a mine
 		solver.PrimedFieldProbability(sboard)
 		fmt.Println(sboard.Render())
@@ -73,11 +71,8 @@ func main() {
 		for _, unflaggedCell := range solver.UnflaggedMines(sboard) {
 			x := unflaggedCell.X
 			y := unflaggedCell.Y
-			c.MoveToXY(x, y)
-			time.Sleep(100 * time.Millisecond)
-			c.Send("FLAG")
-			fmt.Printf("%v\n", reflect.TypeOf(c.Message()))
-			time.Sleep(100 * time.Millisecond)
+			c.FlagXY(x, y)
+			fmt.Printf("f") //fmt.Printf("%v\n", reflect.TypeOf(c.Message()))
 		}
 
 		// find lowest-probability cell to probe
@@ -152,11 +147,8 @@ func main() {
 		x = safest.X
 		y = safest.Y
 		fmt.Printf("%v @ (%v, %v)\n", safest.MineProb, x, y)
-		c.MoveToXY(x, y)
 	}
 
-	// and now it looks like we again step to the right
-	time.Sleep(400 * time.Millisecond)
 	//	spew.Dump(state)
 	time.Sleep(10 * time.Second)
 }

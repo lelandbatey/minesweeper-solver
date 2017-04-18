@@ -33,10 +33,11 @@ type Client struct {
 	// Name will be "example" when initially created, but after the first
 	// message which is a Player struct is read, the name of this Client struct
 	// will match the name of the Player.
-	Name string
-	Msgs chan []byte
-	X    int
-	Y    int
+	Name   string
+	Msgs   chan []byte
+	X      int
+	Y      int
+	Living bool
 }
 
 func New(host string, port string) (*Client, error) {
@@ -51,6 +52,7 @@ func New(host string, port string) (*Client, error) {
 		Msgs:       make(chan []byte),
 		X:          0,
 		Y:          0,
+		Living:     true,
 	}
 	return &rv, nil
 }
@@ -135,27 +137,66 @@ func (c *Client) MoveRight() error {
 	return err
 }
 
-// WARNING. I'm using *solver.Cell. Almost all of the other client
-// functions use defusedivision.* structs. I'd like this to accept a
-// generic interface that supports both Cell types (since it only needs
-// X and Y components). Is there a way to do that?
+// moves the client to the given X,Y coordinates
 func (c *Client) MoveToXY(X int, Y int) error {
 	// move up to cell
 	for c.Y > Y {
 		c.MoveUp()
+		time.Sleep(20 * time.Millisecond)
 	}
 	// move down to cell
 	for c.Y < Y {
 		c.MoveDown()
+		time.Sleep(20 * time.Millisecond)
 	}
 	// move left to cell
 	for c.X > X {
 		c.MoveLeft()
+		time.Sleep(20 * time.Millisecond)
 	}
 	// move right to cell
 	for c.X < X {
 		c.MoveRight()
+		time.Sleep(20 * time.Millisecond)
 	}
+	return nil
+}
+
+// moves to, then probes the given coordinates. Before it does, it also
+// flags the probing spot in order to verify its location
+func (c *Client) ProbeXY(X int, Y int) (defusedivision.State, defusedivision.Player, error) {
+	c.MoveToXY(X, Y)
+	time.Sleep(50 * time.Millisecond)
+	c.Send("PROBE")
+	time.Sleep(50 * time.Millisecond)
+	msg := c.Message()
+	state := msg.(defusedivision.State)
+	player := state.Players[c.Name]
+	x := player.Field.Selected[0]
+	y := player.Field.Selected[1]
+	// update client's location (it has never been different before, but just
+	// in case)
+	c.X = x
+	c.Y = y
+	c.Living = player.Living
+	return state, player, nil
+}
+
+func (c *Client) FlagXY(X int, Y int) error {
+	c.MoveToXY(X, Y)
+	time.Sleep(50 * time.Millisecond)
+	c.Send("FLAG")
+	time.Sleep(50 * time.Millisecond)
+	msg := c.Message()
+	state := msg.(defusedivision.State)
+	player := state.Players[c.Name]
+	x := player.Field.Selected[0]
+	y := player.Field.Selected[1]
+	// update client's location (it has never been different before, but just
+	// in case)
+	c.X = x
+	c.Y = y
+	c.Living = player.Living
 	return nil
 }
 
