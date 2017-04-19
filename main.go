@@ -80,7 +80,7 @@ func main() {
 		safest := solver.GetSafestCell(sboard)
 		if safest.MineProb > 0.0 {
 			fmt.Println("\nsolve with linear algebra")
-			flaglist, safelist := solver.SolveWithReducedRowEchellon(sboard)
+			flaglist, safelist := solver.SolveWithReducedRowEchelon(sboard)
 			for _, unflaggedCell := range flaglist {
 				unflaggedCell.MineProb = 1.0
 				if unflaggedCell.Flagged {

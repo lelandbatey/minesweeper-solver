@@ -2,6 +2,7 @@ package solver
 
 import (
 	"errors"
+	"fmt"
 	"github.com/gonum/matrix/mat64"
 )
 
@@ -69,7 +70,6 @@ func PrimedFieldProbability(mf *Minefield) {
 // it calculates with 100% certainty that a particular cell has a mine.
 func IterPrimedFieldProbability(mf *Minefield) bool {
 	dirtyProbability := false
-
 	primedCells := GetPrimedCells(mf)
 	// first pass calculating probabilities
 	for _, omega := range primedCells {
@@ -176,47 +176,60 @@ func GetNeighborsUnknownProbability(gamma *Cell) (float64, error) {
 	return float64(unknownMinesCount) / float64(unknownNeighborsCount), nil
 }
 
-// find if the minefield has a calculation problem.
-func HasImpossibleProbability(mf *Minefield) bool {
+// witnesses are the cells with #'s displaying how many nearby mines there are
+func GetWitnessCells(mf *Minefield) []*Cell {
+	witnesses := []*Cell{}
 	for _, cell := range mf.Cells {
-		// we check if revealed cell's information clashes with our current
-		// scenario
-		if cell.MineTouch == -1 {
-			continue
-		}
-		_, err := GetNeighborsUnknownProbability(cell)
-		if err != nil {
-			return true
+		if cell.MineTouch > 0 {
+			witnesses = append(witnesses, cell)
 		}
 	}
-	return false
+	return witnesses
 }
 
-func SolveWithReducedRowEchellon(mf *Minefield) ([]*Cell, []*Cell) {
+func printMatrix(mat *mat64.Dense) {
+	R, C := mat.Dims()
+	for r := 0; r < R; r++ {
+		for c := 0; c < C; c++ {
+			fmt.Printf(" %v", int(mat.At(r, c)))
+		}
+		fmt.Println("")
+	}
+	fmt.Println("------------------------------------")
+}
+
+func SolveWithReducedRowEchelon(mf *Minefield) ([]*Cell, []*Cell) {
 	primed := GetPrimedCells(mf)
 	witnesses := GetWitnessCells(mf)
+	fmt.Printf(
+		"\n# of primed: %v\n# of witnesses: %v\n",
+		len(primed), len(witnesses),
+	)
 	mat := constructPrimedMatrix(primed, witnesses)
+	printMatrix(mat)
 	// solve for (as much as possible) a single variable in each row
 	RowReduceEchelon(mat)
-	flags := MatrixFlags(mat)
-	nonmines := MatrixNonMines(mat)
-	flaglist := []*Cell{}
-	safelist := []*Cell{}
-	for _, i := range flags {
-		mine := primed[i]
-		flaglist = append(flaglist, mine)
+	printMatrix(mat)
+	primedMineIndex := MatrixMines(mat)
+	primedSafeIndex := MatrixNonMines(mat)
+	mines := len(primedMineIndex)
+	safe := len(primedSafeIndex)
+	fmt.Printf("Found %v mines and %v safe", mines, safe)
+	flaglist := make([]*Cell, mines)
+	safelist := make([]*Cell, safe)
+	for z, i := range primedMineIndex {
+		flaglist[z] = primed[i]
 	}
-	for _, i := range nonmines {
-		safe := primed[i]
-		safelist = append(safelist, safe)
+	for z, i := range primedSafeIndex {
+		safelist[z] = primed[i]
 	}
 	return flaglist, safelist
 }
 
-// matrix is of form RxC where C=number of primed cells, R= # of witnesses
+// matrix is of form RxC+1 where C=number of primed cells, R= # of witnesses.
 // this matrix format lends itself to linear algebra applications which may
-// solve for locating specific mines or non-mine locations
-// specifically, each row represents a witness equation. Basically,
+// solve for locating specific mines or non-mine locations.
+// Specifically, each row represents a witness equation. Basically,
 // Z = cell1 + cell2 + cell3, where Z = # of mines touch a witness, and
 // cell1, cell2, cell3 are the primed cells bording this witness. All other
 // primed cells that DO NOT border this witness are included as 0 * cell5
@@ -225,25 +238,17 @@ func SolveWithReducedRowEchellon(mf *Minefield) ([]*Cell, []*Cell) {
 // our minefield's potential mines. Performing row addition/subtraction
 // works surprisingly well at reducing the complexity of the problem and can
 // often end up with a result such as cell2 = 1, which tells us there's a mine
-// in cell2. OR we may end up with cell1 + cell3 = 0, which tells us neither
-// cell contains a mine
+// in cell2. OR we may end up with cell1 + cell3 = 0, which tells us that
+// neither cell 1 or 3 contains a mine
 func constructPrimedMatrix(primed []*Cell, witnesses []*Cell) *mat64.Dense {
 	R := len(witnesses)
-	C := len(primed)
+	// len of primed + answer column
+	C := len(primed) + 1
 	mat := mat64.NewDense(R, C, nil)
 	for r, witness := range witnesses {
 		// make map which'll tell us if a set of X,Y coordinates are
 		// neighboring this witness cell
-		neighboring := map[[2]int]bool{}
-		for _, neighbor := range witness.Neighbors {
-			if neighbor == nil {
-				continue
-			}
-			x := neighbor.X
-			y := neighbor.Y
-			coordinates := [2]int{x, y}
-			neighboring[coordinates] = true
-		}
+		neighboring := BuildWitnessNeighborMap(witness)
 		// now for each primed cell (in the same order for each witness),
 		// we add 1 to matrix if cell is neighboring the witness, 0 if not
 		for c, pcell := range primed {
@@ -309,7 +314,7 @@ func RowReduceEchelon(mat *mat64.Dense) {
 // a row with a single 1.0 value, and an "answer" of 1.0
 // [ 0 1 0 0 1 ] <= flag at cell 2
 // [ 1 1 1 0 1 ]
-func MatrixFlags(mat *mat64.Dense) []int {
+func MatrixMines(mat *mat64.Dense) []int {
 	flags := []int{}
 	R, C := mat.Dims()
 	answer := C - 1
@@ -375,120 +380,18 @@ func MatrixNonMines(mat *mat64.Dense) []int {
 	return notmines
 }
 
-/* from an uncompleted board, attempt to completely satisfy all witnesses
-* (cells with #s showing how many mines they are touching) by flagging a cell
-* as containing a mine, one at a time (only flag if cell won't clash with
-* witnesses and currently-flagged cells). Then call SatisfyWitnesses
-* recursively in an attempt to successfully satisfy all witnesses. This will
-* return a list of flagged-cells-coordinates that satisfied the witnesses,
-* along with the total # of recursive calls it took before successfully
-* satisfying witnesses. If not able to satisfy witnesses, then the previously
-* flagged cell was incorrect.
- */
-func SatisfyWitnesses(witnesses []*Cell, primed []*Cell) (map[[2]int]bool, uint, bool, error) {
-	// witness are cells to use in determining witness satisfaction
-	// primed are cells not yet marked as containing a mine
-	flagged := map[[2]int]bool{}
-	retries := uint(0)
-	// keep track of how many scenarios were iterated upon if failed
-	failedScenarios := uint(0)
-	// check if witnesses are satisfied. If so, then we're done!
-	satisfied, err := WitnessesAreSatisfied(witnesses)
-	if err != nil {
-		return flagged, retries, false, errors.New("witnesses clashed before I even started")
-	}
-	if satisfied {
-		return flagged, retries, true, nil
-	}
-	// some cells will never satisfy witnesses in this current environment
-	// weed these out and check only a list of cells that are compatible with
-	// the currently marked cells
-	valids := GetValidPrimedCells(witnesses, primed)
-	// now we mark one of valid-primed as a mine, and see if it'll successfully
-	// satisfy the witnesses
-	for _, cell := range valids {
-		tempProb := cell.MineProb
-		cell.MineProb = 1.0
-		flags, tries, success, _ := SatisfyWitnesses(witnesses, valids)
-		retries += 1
-		cell.MineProb = tempProb
-		//		if err != nil {
-		//			return flagged, retries, false, err
-		//		}
-		if success {
-			// SUCCESS! Meaning... this cell is a possible mine.
-			// Tally up # of retries
-			retries += tries
-			// add cells that were flagged in recursive call(s)
-			for k, v := range flags {
-				flagged[k] = v
-			}
-			// add cell used in this loop
-			flagged[[2]int{cell.X, cell.Y}] = true
-			return flagged, retries, true, nil
-		}
-		// if there's a lot of scenarios, that suggests that this mine has a
-		// higher likelyhood of actually being a mine. Basically, if there's
-		// only ONE way to arrange the mines, then it's unlikely that it'll
-		// be that way, simply because the odds of random mines being arranged
-		// in the least likely way is .. well, less likely.
-		// so if all scenarios fail to satisfy witnesses, but do so with few
-		// scenarios, that suggests that the arrangement is rare, and the
-		// first cell to be hypothetically flagged is least likely to be
-		// a mine.
-		failedScenarios += tries + 1
-	}
-	return flagged, failedScenarios, false, nil
-}
-
-// witnesses are the cells with #'s displaying how many nearby mines there are
-func GetWitnessCells(mf *Minefield) []*Cell {
-	witnesses := []*Cell{}
-	for _, cell := range mf.Cells {
-		if cell.MineTouch > 0 {
-			witnesses = append(witnesses, cell)
-		}
-	}
-	return witnesses
-}
-
-// return a list of cells that can be marked as containing a mine
-// without clashing with the witnesses (aka without creating an impossible
-// scenario given the numbers displayed on the minefield)
-func GetValidPrimedCells(witnesses []*Cell, primed []*Cell) []*Cell {
-	valids := []*Cell{}
-	for _, cell := range primed {
-		if cell.MineProb == 1.0 || cell.MineProb == 0.0 {
+func BuildWitnessNeighborMap(witness *Cell) map[[2]int]bool {
+	neighboring := map[[2]int]bool{}
+	for _, neighbor := range witness.Neighbors {
+		if neighbor == nil {
 			continue
 		}
-		// temporarily mark cell as mine and see if it'll generate an error
-		tempProb := cell.MineProb
-		cell.MineProb = 1.0
-		_, err := WitnessesAreSatisfied(witnesses)
-		cell.MineProb = tempProb
-		if err == nil {
-			valids = append(valids, cell)
-		}
+		x := neighbor.X
+		y := neighbor.Y
+		coordinates := [2]int{x, y}
+		neighboring[coordinates] = true
 	}
-	return valids
-}
-
-// build a map of X,Y -> list of cell's witness-neighbors
-// but specifically only valid witness neighbors. This makes it very easy
-// to mark a primed cell and query it's witness neighbors to determine if
-// it causes a clash.
-func BuildPrimeWitnessMap(primedCells []*Cell) map[[2]int][]*Cell {
-	witnesses := map[[2]int][]*Cell{}
-	for _, primed := range primedCells {
-		for _, neighbor := range primed.Neighbors {
-			if neighbor == nil || neighbor.MineTouch <= 0 {
-				continue
-			}
-			xy := [2]int{primed.X, primed.Y}
-			witnesses[xy] = append(witnesses[xy], neighbor)
-		}
-	}
-	return witnesses
+	return neighboring
 }
 
 // returns whether witnesses show 0.0 probability for all unknown neighbors
