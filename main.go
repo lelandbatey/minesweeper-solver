@@ -72,77 +72,34 @@ func main() {
 			x := unflaggedCell.X
 			y := unflaggedCell.Y
 			c.FlagXY(x, y)
+			unflaggedCell.Flagged = true
 			fmt.Printf("f") //fmt.Printf("%v\n", reflect.TypeOf(c.Message()))
 		}
 
 		// find lowest-probability cell to probe
 		safest := solver.GetSafestCell(sboard)
-		stillNotCertain := true
 		if safest.MineProb > 0.0 {
-			// if probability isn't 0, then we should try hypothetical scenarios
-			// to see if we can nail down a cell that cannot be a mine
-			// we do this by setting a mine probability to 1.0 and then
-			// running the probability calculations. Then we ask if any
-			// "impossible" scenario has happened: such as too many nearby
-			// mines...
-			// If so, then our hypothetical mine cannot be a mine, since it
-			// violates our knowledge of the board by putting too many mines
-			// nearby a revealed #
-			witnesses := solver.GetWitnesses(sboard)
-			primedCells := solver.GetPrimedCells(sboard)
-			// get non 1.0 or 0.0 probability for mines & get cells
-			// that don't immediately clash with witnesses if they are
-			// marked as a mine
-			primedCells = solver.GetValidPrimedCells(witnesses, primedCells)
-			// keep track of which cells were valid hypothetical mines
-			// once we have a success in satisfying all witnesses, add all
-			// hypothetically-flagged cells to this list and avoid using them
-			// again; it'll just find the same solution (or another) but
-			// definitely will NOT find a failure
-			// (basically, optimize to skip already known successes)
-			validHypotheticalMine := map[[2]int]bool{}
-			for _, cell := range primedCells {
-				validHypotheticalMine[[2]int{cell.X, cell.Y}] = false
-			}
-			likelyhood := map[uint]*solver.Cell{}
-			bestScenario := uint(0) // get min integer
-			fmt.Printf("size of primed cells: %v\n", len(primedCells))
-			fmt.Printf("size of witnesses: %v\n", len(witnesses))
-			for _, hypothetical := range primedCells {
-				coordinates := [2]int{hypothetical.X, hypothetical.Y}
-				// skip testing this cell if it's already been proven to be
-				// part of a successful hypothetically-flagged scenario
-				if validHypotheticalMine[coordinates] {
+			fmt.Println("\nsolve with linear algebra")
+			flaglist, safelist := solver.SolveWithReducedRowEchellon(sboard)
+			for _, unflaggedCell := range flaglist {
+				unflaggedCell.MineProb = 1.0
+				if unflaggedCell.Flagged {
+					// skip toggling flag if we already think it's a flag
 					continue
 				}
-				// indicate "thinking". Useful when script takes a looong time
-				fmt.Printf(".")
-				tempProb := hypothetical.MineProb
-				// mark this cell as a mine
-				hypothetical.MineProb = 1.0
-				flags, scenarios, success, err := solver.SatisfyWitnesses(witnesses, primedCells)
-				_ = err
-				hypothetical.MineProb = tempProb
-				if !success {
-					fmt.Printf("found a hypothetical non-mine of ")
-					safest = hypothetical
-					stillNotCertain = false
-					break
-				} else {
-					for coordinates, _ := range flags {
-						validHypotheticalMine[coordinates] = true
-					}
-				}
-				likelyhood[scenarios] = hypothetical
-				if scenarios > bestScenario {
-					bestScenario = scenarios
-				}
+				unflaggedCell.Flagged = true
+				x := unflaggedCell.X
+				y := unflaggedCell.Y
+				c.FlagXY(x, y)
+				fmt.Printf("f") //fmt.Printf("%v\n", reflect.TypeOf(c.Message()))
 			}
-			if stillNotCertain {
-				fmt.Printf("well I'm still not certain, but the best scenario")
-				fmt.Printf(" had %v scenarios\n", bestScenario)
-				safest = likelyhood[bestScenario]
+			for _, safe := range safelist {
+				safe.MineProb = 0.0
 			}
+			// REFIND the probability of cells containing a mine, given that
+			// we've probably flagged a few cells and found a few safe cells
+			solver.PrimedFieldProbability(sboard)
+			safest = solver.GetSafestCell(sboard)
 		}
 		x = safest.X
 		y = safest.Y

@@ -1,6 +1,9 @@
 package solver
 
-import "errors"
+import (
+	"errors"
+	"github.com/gonum/matrix/mat64"
+)
 
 /* let's talk about symantics. When we say "Primed Field", we refer to a
  * minefield that has been partially exposed. The cells bordering on numbers
@@ -189,6 +192,189 @@ func HasImpossibleProbability(mf *Minefield) bool {
 	return false
 }
 
+func SolveWithReducedRowEchellon(mf *Minefield) ([]*Cell, []*Cell) {
+	primed := GetPrimedCells(mf)
+	witnesses := GetWitnessCells(mf)
+	mat := constructPrimedMatrix(primed, witnesses)
+	// solve for (as much as possible) a single variable in each row
+	RowReduceEchelon(mat)
+	flags := MatrixFlags(mat)
+	nonmines := MatrixNonMines(mat)
+	flaglist := []*Cell{}
+	safelist := []*Cell{}
+	for _, i := range flags {
+		mine := primed[i]
+		flaglist = append(flaglist, mine)
+	}
+	for _, i := range nonmines {
+		safe := primed[i]
+		safelist = append(safelist, safe)
+	}
+	return flaglist, safelist
+}
+
+// matrix is of form RxC where C=number of primed cells, R= # of witnesses
+// this matrix format lends itself to linear algebra applications which may
+// solve for locating specific mines or non-mine locations
+// specifically, each row represents a witness equation. Basically,
+// Z = cell1 + cell2 + cell3, where Z = # of mines touch a witness, and
+// cell1, cell2, cell3 are the primed cells bording this witness. All other
+// primed cells that DO NOT border this witness are included as 0 * cell5
+// (or whichever cell# it may be).
+// With this matrix representation, we have a set of equations representing
+// our minefield's potential mines. Performing row addition/subtraction
+// works surprisingly well at reducing the complexity of the problem and can
+// often end up with a result such as cell2 = 1, which tells us there's a mine
+// in cell2. OR we may end up with cell1 + cell3 = 0, which tells us neither
+// cell contains a mine
+func constructPrimedMatrix(primed []*Cell, witnesses []*Cell) *mat64.Dense {
+	R := len(witnesses)
+	C := len(primed)
+	mat := mat64.NewDense(R, C, nil)
+	for r, witness := range witnesses {
+		// make map which'll tell us if a set of X,Y coordinates are
+		// neighboring this witness cell
+		neighboring := map[[2]int]bool{}
+		for _, neighbor := range witness.Neighbors {
+			if neighbor == nil {
+				continue
+			}
+			x := neighbor.X
+			y := neighbor.Y
+			coordinates := [2]int{x, y}
+			neighboring[coordinates] = true
+		}
+		// now for each primed cell (in the same order for each witness),
+		// we add 1 to matrix if cell is neighboring the witness, 0 if not
+		for c, pcell := range primed {
+			coordinates := [2]int{pcell.X, pcell.Y}
+			if neighboring[coordinates] {
+				mat.Set(r, c, 1.0)
+			}
+		}
+		//finally, add "answer" to equation. Aka, # of mines touching witness
+		mat.Set(r, C-1, float64(witness.MineTouch))
+	}
+	// finally, create the matrix from the data we created
+	return mat
+}
+
+// reduce a matrix such that each row has a chosen column value equal to
+// 1.0 and this column value  == 0.0 in all other rows. An optimal example:
+// [ 1 0 0 0 ]
+// | 0 1 0 0 |
+// [ 0 0 1 0 ]
+// but the requirements for rref are only that the leading # be nonzero
+// (and this algorithm won't guarantee pretty results with diagonal 1's):
+// [ 0 0 1 0 ]
+// [ 1 3 0 0 ]
+// [ 0 0 0 0 ]
+// what you should expect is that for every leading non-zero value in each row,
+// the other rows will have a 0.0 in that column. Some rows may be all 0's
+// it'll be common to see random values following a 1, just due to the
+// equations not having a leading nonzero value in a particular column.
+func RowReduceEchelon(mat *mat64.Dense) {
+	R, C := mat.Dims()
+	for r := 0; r < R; r++ {
+		row := mat.RowView(r)
+		// find the pivot point
+		pivot := 0
+		for ; pivot < C && row.At(pivot, 0) == 0.0; pivot++ {
+		}
+		if pivot == C {
+			// this row has no non-zero values (hey, it happens sometimes)
+			continue
+		}
+		leaderVal := row.At(pivot, 0)
+		// scale row such that leading value (at pivot point) == 1.0
+		row.ScaleVec(1.0/leaderVal, row)
+		// now delete pivot point from equations above this row
+		for higher_r := r - 1; higher_r >= 0; higher_r-- {
+			above := mat.RowView(higher_r)
+			subtractVal := -1.0 * above.At(pivot, 0)
+			// add subtractVal * row to above, thus eliminating pivot point
+			// from above row
+			above.AddScaledVec(above, subtractVal, row)
+		}
+		for lower_r := r + 1; lower_r < R; lower_r++ {
+			below := mat.RowView(lower_r)
+			subtractVal := -1.0 * below.At(pivot, 0)
+			below.AddScaledVec(below, subtractVal, row)
+		}
+	}
+	// matrix should be editted in place. No need to return anything
+}
+
+// analyze the rref matrix for flags. These cells can be identified as
+// a row with a single 1.0 value, and an "answer" of 1.0
+// [ 0 1 0 0 1 ] <= flag at cell 2
+// [ 1 1 1 0 1 ]
+func MatrixFlags(mat *mat64.Dense) []int {
+	flags := []int{}
+	R, C := mat.Dims()
+	answer := C - 1
+	for r := 0; r < R; r++ {
+		if mat.At(r, answer) != 1.0 {
+			continue
+		}
+		// if the answer == 1.0, and there's only ONE non-zero variable, then
+		// it's a flag
+		row := mat.RowView(r)
+		nonzeroCount := 0
+		flagC := -1
+		for c := 0; c < answer; c++ {
+			if row.At(c, 0) != 0.0 {
+				nonzeroCount += 1
+				flagC = c
+			}
+		}
+		if nonzeroCount == 1 {
+			flags = append(flags, flagC)
+		}
+	}
+	return flags
+}
+
+// analyze the rref matrix for non-mines. These cells can be identified as
+// a row with only 1.0 values, and an "answer" of 0.0
+// [ 1 0 0 0 0 ] <= non-mine at cell 1
+// [ 0 1 1 0 0 ] <= non-mine at both cell 2 & 3
+func MatrixNonMines(mat *mat64.Dense) []int {
+	notmines := []int{}
+	R, C := mat.Dims()
+	answer := C - 1
+	for r := 0; r < R; r++ {
+		if mat.At(r, answer) != 0.0 {
+			continue
+		}
+		// if the answer == 0.0, and there's only 1.0's as variables, then
+		// they are all non-mines
+		row := mat.RowView(r)
+		fail := false
+		val := 0.0
+		// verify all variable coefficients are 0.0 or 1.0
+		for c := 0; c < answer; c++ {
+			val = row.At(c, 0)
+			if val != 0.0 && val != 1.0 {
+				fail = true
+				break
+			}
+		}
+		if fail {
+			// this row can't prove anything as a not-mine. Try the next row
+			continue
+		}
+		// there are nonmines! Add them to our notmines slice
+		for c := 0; c < answer; c++ {
+			val = row.At(c, 0)
+			if val == 1.0 {
+				notmines = append(notmines, c)
+			}
+		}
+	}
+	return notmines
+}
+
 /* from an uncompleted board, attempt to completely satisfy all witnesses
 * (cells with #s showing how many mines they are touching) by flagging a cell
 * as containing a mine, one at a time (only flag if cell won't clash with
@@ -256,7 +442,7 @@ func SatisfyWitnesses(witnesses []*Cell, primed []*Cell) (map[[2]int]bool, uint,
 }
 
 // witnesses are the cells with #'s displaying how many nearby mines there are
-func GetWitnesses(mf *Minefield) []*Cell {
+func GetWitnessCells(mf *Minefield) []*Cell {
 	witnesses := []*Cell{}
 	for _, cell := range mf.Cells {
 		if cell.MineTouch > 0 {
