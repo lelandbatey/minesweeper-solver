@@ -6,6 +6,8 @@ import (
 	"github.com/gonum/matrix/mat64"
 )
 
+var VERBOSE bool = false
+
 /* let's talk about symantics. When we say "Primed Field", we refer to a
  * minefield that has been partially exposed. The cells bordering on numbers
  * are "primed" because they may or may not contain a mine, and we therefore
@@ -198,25 +200,62 @@ func printMatrix(mat *mat64.Dense) {
 	fmt.Println("------------------------------------")
 }
 
+// given a map of coordinates of mines, update the probability on those cells
+// to 1.0
+func ApplyKnownMines(mf *Minefield, Mines map[[2]int]bool) {
+	for _, cell := range mf.Cells {
+		if Mines[[2]int{cell.X, cell.Y}] {
+			cell.MineProb = 1.0
+		}
+	}
+}
+
+// given a map of coordinates of safe cells, update the probability on those
+// cells to 0.0
+func ApplyKnownSafed(mf *Minefield, Safed map[[2]int]bool) {
+	for _, cell := range mf.Cells {
+		if Safed[[2]int{cell.X, cell.Y}] {
+			cell.MineProb = 0.0
+		}
+	}
+}
+
+// calculate mines and safe-spots using linear algebra. Treat each witness as a
+// start to an equation and each primed neighbor as a variable. 1 equation per
+// witness. Many equations per board. Convert series of equations into a
+// matrix. Compute the Row-Reduced Echelon Form of the matrix. At this point,
+// it's often possible to compute mines / safe spots from the resulting matrix
 func SolveWithReducedRowEchelon(mf *Minefield) (map[[2]int]*Cell, map[[2]int]*Cell) {
 	primed := GetPrimedCells(mf)
 	witnesses := GetWitnessCells(mf)
-	fmt.Printf(
-		"\n# of primed: %v\n# of witnesses: %v\n",
-		len(primed), len(witnesses),
-	)
 	// generate matrix representing system of equations relating
 	// witness (# of touching mines) to potential mine-carriers
 	mat := constructPrimedMatrix(primed, witnesses)
 	R, _ := mat.Dims()
-	printMatrix(mat)
 	// solve for (as much as possible) a single variable in each row
 	RowReduceEchelon(mat)
-	printMatrix(mat)
 	// find rows in which equation has been reduced to (1 cell = 1 mine)
 	primedMineIndex := MatrixMines(mat)
 	// find rows in which equation has been reduced to (x cells = 0 mines)
 	primedSafeIndex := MatrixNonMines(mat)
+	//---
+	// find additional mines by combining rows with -1 coefficients. It's
+	// possible that a two-cell solution may get reduced to a 1-to-1 solution.
+	primedMineIndex2 := MatrixMinesRecombine(mat)
+	// find additional safe cells by combining rows with -1 answers with +1
+	// answers. It's possible to get (cell_x + cell_y = 0) from this.
+	primedSafeIndex2 := MatrixNonMinesRecombine(mat)
+	// combine mine, safe-spot index
+	primedMineIndex = append(primedMineIndex, primedMineIndex2...)
+	primedSafeIndex = append(primedSafeIndex, primedSafeIndex2...)
+	// find additional mines / safe cells using negative coefficient deduction
+	for r := 0; r < R; r++ {
+		row := mat.RowView(r)
+		primedMineIndex2, primedSafeIndex2 = RowNegativeDeduction(row)
+		// combine results
+		primedMineIndex = append(primedMineIndex, primedMineIndex2...)
+		primedSafeIndex = append(primedSafeIndex, primedSafeIndex2...)
+	}
 	flaglist := map[[2]int]*Cell{}
 	safelist := map[[2]int]*Cell{}
 	for _, i := range primedMineIndex {
@@ -227,45 +266,6 @@ func SolveWithReducedRowEchelon(mf *Minefield) (map[[2]int]*Cell, map[[2]int]*Ce
 		safe := primed[i]
 		safelist[[2]int{safe.X, safe.Y}] = safe
 	}
-	mines := len(flaglist)
-	safe := len(safelist)
-	fmt.Printf("Found %v mines & %v safe\n", mines, safe)
-	//---
-	// find additional mines by combining rows with -1 coefficients. It's
-	// possible that a two-cell solution may get reduced to a 1-to-1 solution.
-	primedMineIndex = MatrixMinesRecombine(mat)
-	// find additional safe cells by combining rows with -1 answers with +1
-	// answers. It's possible to get (cell_x + cell_y = 0) from this.
-	primedSafeIndex = MatrixNonMinesRecombine(mat)
-	// copy these "new" found indices into the flaglist and safelist
-	for _, i := range primedMineIndex {
-		mine := primed[i]
-		flaglist[[2]int{mine.X, mine.Y}] = mine
-	}
-	for _, i := range primedSafeIndex {
-		safe := primed[i]
-		safelist[[2]int{safe.X, safe.Y}] = safe
-	}
-	mines = len(flaglist)
-	safe = len(safelist)
-	fmt.Printf("Found %v mines & %v safe +Recombine\n", mines, safe)
-	// find additional mines / safe cells using negative coefficient deduction
-	for r := 0; r < R; r++ {
-		row := mat.RowView(r)
-		primedMineIndex, primedSafeIndex = RowNegativeDeduction(row)
-		// copy these "new" found indices into the flaglist and safelist
-		for _, i := range primedMineIndex {
-			mine := primed[i]
-			flaglist[[2]int{mine.X, mine.Y}] = mine
-		}
-		for _, i := range primedSafeIndex {
-			safe := primed[i]
-			safelist[[2]int{safe.X, safe.Y}] = safe
-		}
-	}
-	mines = len(flaglist)
-	safe = len(safelist)
-	fmt.Printf("Found %v mines & %v safe +NegativeDeduction\n", mines, safe)
 	return flaglist, safelist
 }
 
@@ -423,6 +423,8 @@ func MatrixNonMines(mat *mat64.Dense) []int {
 	return notmines
 }
 
+// recombine rows with -1 coefficients in hopes that it'll cancel out a +1
+// in another row and lead to an answer. This has worked in the past
 func MatrixMinesRecombine(mat *mat64.Dense) []int {
 	mineIndex := []int{}
 	R, C := mat.Dims()
@@ -527,20 +529,4 @@ func BuildWitnessNeighborMap(witness *Cell) map[[2]int]bool {
 		neighboring[coordinates] = true
 	}
 	return neighboring
-}
-
-// returns whether witnesses show 0.0 probability for all unknown neighbors
-// (which means that all mines are marked). Also returns error if an error
-// occurs (which means too many mines are nearby)
-func WitnessesAreSatisfied(witnesses []*Cell) (bool, error) {
-	for _, witness := range witnesses {
-		probability, err := GetNeighborsUnknownProbability(witness)
-		if err != nil {
-			return false, errors.New("Too many mines nearby witness")
-		}
-		if probability > 0.0 {
-			return false, nil
-		}
-	}
-	return true, nil
 }

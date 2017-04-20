@@ -157,7 +157,7 @@ func NewCell(ddc *defusedivision.Cell) (*Cell, error) {
 // " Y " indicates a witness. These #'s you see on the board indicating nearby mines
 // " X " indicates a 100% mine
 func (mf *Minefield) Render() string {
-	rv := ""
+	rv := "\n"
 	for _, c := range mf.Cells {
 		if c.MineProb == -1.0 {
 			rv += " ?  "
@@ -171,7 +171,11 @@ func (mf *Minefield) Render() string {
 			if c.MineProb == 1.0 {
 				rv += fmt.Sprintf(" ╬  ")
 			} else {
-				rv += fmt.Sprintf("%.1f ", c.MineProb)
+				if c.MineProb == 0.0 {
+					rv += fmt.Sprintf(" Ø  ")
+				} else {
+					rv += fmt.Sprintf("%.1f ", c.MineProb)
+				}
 			}
 		}
 		if c.X == mf.Width-1 {
