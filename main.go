@@ -104,6 +104,10 @@ func main() {
 		x = safest.X
 		y = safest.Y
 		fmt.Printf("%v @ (%v, %v)\n", safest.MineProb, x, y)
+		if safest.MineProb > 0.0 {
+			// give a visual indication of our lack of confidence
+			c.HesitateAround(x, y)
+		}
 	}
 
 	//	spew.Dump(state)

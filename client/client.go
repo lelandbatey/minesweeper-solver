@@ -114,6 +114,9 @@ func NetReader(client *Client) {
 func (c *Client) MoveUp() error {
 	err := c.Send("UP")
 	c.Y = c.Y - 1
+	if c.Y < 0 {
+		c.Y = 0
+	}
 	// a confirmation is sent back after the movement is recieved. Discard it
 	c.Message()
 	return err
@@ -127,6 +130,9 @@ func (c *Client) MoveDown() error {
 func (c *Client) MoveLeft() error {
 	err := c.Send("LEFT")
 	c.X = c.X - 1
+	if c.X < 0 {
+		c.X = 0
+	}
 	c.Message()
 	return err
 }
@@ -158,6 +164,21 @@ func (c *Client) MoveToXY(X int, Y int) error {
 	for c.X < X {
 		c.MoveRight()
 		time.Sleep(20 * time.Millisecond)
+	}
+	return nil
+}
+
+func (c *Client) HesitateAround(x int, y int) error {
+	c.MoveToXY(x, y)
+	for i := 0; i < 3; i++ {
+		c.MoveUp()
+		time.Sleep(200 * time.Millisecond)
+		c.MoveLeft()
+		time.Sleep(200 * time.Millisecond)
+		c.MoveDown()
+		time.Sleep(200 * time.Millisecond)
+		c.MoveRight()
+		time.Sleep(200 * time.Millisecond)
 	}
 	return nil
 }
