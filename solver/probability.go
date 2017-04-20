@@ -198,31 +198,74 @@ func printMatrix(mat *mat64.Dense) {
 	fmt.Println("------------------------------------")
 }
 
-func SolveWithReducedRowEchelon(mf *Minefield) ([]*Cell, []*Cell) {
+func SolveWithReducedRowEchelon(mf *Minefield) (map[[2]int]*Cell, map[[2]int]*Cell) {
 	primed := GetPrimedCells(mf)
 	witnesses := GetWitnessCells(mf)
 	fmt.Printf(
 		"\n# of primed: %v\n# of witnesses: %v\n",
 		len(primed), len(witnesses),
 	)
+	// generate matrix representing system of equations relating
+	// witness (# of touching mines) to potential mine-carriers
 	mat := constructPrimedMatrix(primed, witnesses)
+	R, _ := mat.Dims()
 	printMatrix(mat)
 	// solve for (as much as possible) a single variable in each row
 	RowReduceEchelon(mat)
 	printMatrix(mat)
+	// find rows in which equation has been reduced to (1 cell = 1 mine)
 	primedMineIndex := MatrixMines(mat)
+	// find rows in which equation has been reduced to (x cells = 0 mines)
 	primedSafeIndex := MatrixNonMines(mat)
-	mines := len(primedMineIndex)
-	safe := len(primedSafeIndex)
-	fmt.Printf("Found %v mines and %v safe", mines, safe)
-	flaglist := make([]*Cell, mines)
-	safelist := make([]*Cell, safe)
-	for z, i := range primedMineIndex {
-		flaglist[z] = primed[i]
+	flaglist := map[[2]int]*Cell{}
+	safelist := map[[2]int]*Cell{}
+	for _, i := range primedMineIndex {
+		mine := primed[i]
+		flaglist[[2]int{mine.X, mine.Y}] = mine
 	}
-	for z, i := range primedSafeIndex {
-		safelist[z] = primed[i]
+	for _, i := range primedSafeIndex {
+		safe := primed[i]
+		safelist[[2]int{safe.X, safe.Y}] = safe
 	}
+	mines := len(flaglist)
+	safe := len(safelist)
+	fmt.Printf("Found %v mines & %v safe\n", mines, safe)
+	//---
+	// find additional mines by combining rows with -1 coefficients. It's
+	// possible that a two-cell solution may get reduced to a 1-to-1 solution.
+	primedMineIndex = MatrixMinesRecombine(mat)
+	// find additional safe cells by combining rows with -1 answers with +1
+	// answers. It's possible to get (cell_x + cell_y = 0) from this.
+	primedSafeIndex = MatrixNonMinesRecombine(mat)
+	// copy these "new" found indices into the flaglist and safelist
+	for _, i := range primedMineIndex {
+		mine := primed[i]
+		flaglist[[2]int{mine.X, mine.Y}] = mine
+	}
+	for _, i := range primedSafeIndex {
+		safe := primed[i]
+		safelist[[2]int{safe.X, safe.Y}] = safe
+	}
+	mines = len(flaglist)
+	safe = len(safelist)
+	fmt.Printf("Found %v mines & %v safe +Recombine\n", mines, safe)
+	// find additional mines / safe cells using negative coefficient deduction
+	for r := 0; r < R; r++ {
+		row := mat.RowView(r)
+		primedMineIndex, primedSafeIndex = RowNegativeDeduction(row)
+		// copy these "new" found indices into the flaglist and safelist
+		for _, i := range primedMineIndex {
+			mine := primed[i]
+			flaglist[[2]int{mine.X, mine.Y}] = mine
+		}
+		for _, i := range primedSafeIndex {
+			safe := primed[i]
+			safelist[[2]int{safe.X, safe.Y}] = safe
+		}
+	}
+	mines = len(flaglist)
+	safe = len(safelist)
+	fmt.Printf("Found %v mines & %v safe +NegativeDeduction\n", mines, safe)
 	return flaglist, safelist
 }
 
@@ -352,7 +395,7 @@ func MatrixNonMines(mat *mat64.Dense) []int {
 		if mat.At(r, answer) != 0.0 {
 			continue
 		}
-		// if the answer == 0.0, and there's only 1.0's as variables, then
+		// if the answer == 0.0, and there's only 1.0's as coefficients, then
 		// they are all non-mines
 		row := mat.RowView(r)
 		fail := false
@@ -378,6 +421,98 @@ func MatrixNonMines(mat *mat64.Dense) []int {
 		}
 	}
 	return notmines
+}
+
+func MatrixMinesRecombine(mat *mat64.Dense) []int {
+	mineIndex := []int{}
+	R, C := mat.Dims()
+	for r := 0; r < R; r++ {
+		row := mat.RowView(r)
+		// check all coefficients (up to C - 1) for -1 values
+		for c := 0; c < C-1; c++ {
+			if row.At(c, 0) < 0.0 {
+				// this coefficient is negative.
+				// try combining this row with all others to get rid of the -1
+				matRecombined := MatrixAddVector(mat, row)
+				foundMines := MatrixMines(matRecombined)
+				mineIndex = append(mineIndex, foundMines...)
+				// done with this row. Move onto next one
+				break
+			}
+		}
+	}
+	return mineIndex
+}
+
+// recombine rows where answer == -1 in order to generate
+// nonmine solutions
+func MatrixNonMinesRecombine(mat *mat64.Dense) (safeIndex []int) {
+	R, C := mat.Dims()
+	answer := C - 1
+	for r := 0; r < R; r++ {
+		row := mat.RowView(r)
+		// check answer column for -1 values
+		if row.At(answer, 0) < 0.0 {
+			// this coefficient is negative.
+			// try combining this row with all others to get rid of the -1
+			matRecombined := MatrixAddVector(mat, row)
+			foundSafe := MatrixNonMines(matRecombined)
+			safeIndex = append(safeIndex, foundSafe...)
+		}
+	}
+	return
+}
+
+// in certain cases, where the number of positive coefficients equals the
+// answer column, any negative coefficients are proven to be non-mines
+// (because the equation x + y - z = 2 proves that z=0 if x,y,z are {0,1})
+func RowNegativeDeduction(row *mat64.Vector) (mines []int, safe []int) {
+	// mines and safe are already pre-declared []int lists
+	C := row.Len()
+	answer := C - 1
+	if row.At(answer, 0) == 0 {
+		return
+	}
+	row2 := mat64.NewVector(C, nil)
+	if row2.At(answer, 0) == -1 {
+		row2.ScaleVec(-1.0, row2)
+	} else {
+		row2.CloneVec(row)
+	}
+	// At this point, the answer is a positive #. IF sum of positive
+	// coefficients equals answer, then those are mines. At the same time, IF
+	// the previous statement holds true, then any negative coefficients are
+	// nonmines
+	positiveSum := 0.0
+	val := 0.0
+	for c := 0; c < answer; c++ {
+		val = row.At(c, 0)
+		if val < 0 {
+			safe = append(safe, c)
+		}
+		if val > 0 {
+			positiveSum += val
+			mines = append(mines, c)
+		}
+	}
+	if positiveSum != row.At(answer, 0) {
+		// no dice. return empty lists because we found no results
+		return []int{}, []int{}
+	}
+	return
+}
+
+// clones matrix. Adds the vector to each of the matrice's rows and return mat
+// used to add a single row to all the rows of the matrix
+func MatrixAddVector(mat *mat64.Dense, row *mat64.Vector) *mat64.Dense {
+	R, C := mat.Dims()
+	mat2 := mat64.NewDense(R, C, nil)
+	mat2.Clone(mat)
+	for r := 0; r < R; r++ {
+		row2 := mat2.RowView(r)
+		row2.AddVec(row2, row)
+	}
+	return mat2
 }
 
 func BuildWitnessNeighborMap(witness *Cell) map[[2]int]bool {
