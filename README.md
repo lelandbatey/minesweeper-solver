@@ -68,26 +68,58 @@ with `C3 = 1` which tells us immediately that C3 is a mine!
 There is an automated way to do this with an equation for every witness. First
 we convert each witness-equation into a sequence of numbers representing the
 coefficients in its equation. This sequence becomes a row in a matrix. The full
-matrix has a row for each witness in the minefield. For example, if we were
-dealing with just the two previously mentioned witnesses, their corresponding
-equations would be converted into this matrix:  
-1 | 1 | 0 | 1
----|---|---|---
-1 | 1 | 1 | 2
+matrix has a row for each witness in the minefield. Performing row operations
+until the matrix is in its Row-Reduced Echelon Form tends to solve these
+equations enough such that you can determine where mines and safe cells are.  
+For example, if we were dealing with the following revealed minefield:  
+  .  |  .  |  .  |  1  |  C1
+:---:|:---:|:---:|:---:|:---:
+  1  |  2  |  2  |  2  | C2
+  C7 | C6  | C5  | C4  |  C3  
+Where I've labeled the primed cells C1-7, the following witness-equations would
+result (starting with witness beside C1):  
+`C1 + C2 = 1`  
+`C1 + C2 + C3 + C4 + C5 = 2`  
+`C4 + C5 + C6 = 2`  
+`C5 + C6 + C7 = 2`  
+`C6 + C7 = 1`  
+translated into sequences of numbers, and added as rows to a matrix becomes (header added for convenience):
+  C1 |  C2 |  C3 |  C4 |  C5 |  C6 |  C7 |  #
+:---:|:---:|:---:|:---:|:---:|:---:|:---:|:---:
+  1  |  1  |  0  |  0  |  0  |  0  |  0  |  1
+  1  |  1  |  1  |  1  |  1  |  0  |  0  |  2
+  0  |  0  |  0  |  1  |  1  |  1  |  0  |  2
+  0  |  0  |  0  |  0  |  1  |  1  |  1  |  2
+  0  |  0  |  0  |  0  |  0  |  1  |  1  |  1
+
 From here, we perform row operations (scaling, adding, subtracting) to arrive
-at a **Row-Reduced Echelon Form**, which will reduce the above matrix to:  
-1  | 1 | -1 | 0
----|---|---|---
-0  | 0 | 1 | 1
-which is equivalent to the following two equations:  
-`C1 + C2 - C3 = 0` and `C3 = 1`  
-Again, we see that C3 is a mine. The first equation, however, remains
-ambiguous. Is C1 or C2 a mine? One of them is... To solve this, we will need
-more info. More equations. A larger matrix. Luckily, Row-Reduced Echelon Form
-is incredibly fast to compute, which is why this solver calculates RREF on
-every step. Treating a minefield in this fashion can puzzle out any solvable
-scenario. (It should be noted that minesweeper is not solveable 100% of the
-time)
+at a **Row-Reduced Echelon Form**. An RREF of the above matrix will look like
+(again, ignore the header added for convenience):  
+  C1 |  C2 |  C3 |  C4 |  C5 |  C6 |  C7 |  #
+:---:|:---:|:---:|:---:|:---:|:---:|:---:|:---:
+  1  |  1  |  0  |  0  |  0  |  0  |  0  |  1
+**0**|**0**|**1**|**0**|**0**|**0**|**1**|**0**
+  0  |  0  |  0  |  1  |  0  |  0  | -1  |  0
+**0**|**0**|**0**|**0**|**1**|**0**|**0**|**1**
+  0  |  0  |  0  |  0  |  0  |  1  |  1  |  1
+Importantly, observe that rows 2 and 4 respectively show these equations:  
+`C3 + C7 = 0`  
+`C5 = 1`
+which to say that we know C5 is a mine, and C3, C7 are safe! All that from just
+performing a few row operations. If we look a little closer, we can also see
+that adding row2 & row3 gives us the result:  
+`C3 + C4 = 0`  
+meaning that we also know C4 is safe! If we apply what we've just learned to
+the minefield, it'll look like this:  
+  .  |  .  |  .  |  1  |  C1
+:---:|:---:|:---:|:---:|:---:
+  1  |  2  |  2  |  2  | C2
+  0  | C6  | 💣  |  0  |  0  
+... and I'm sure from here you can figure out where another mine is :)  
+Row-Reduced Echelon Form is incredibly fast to compute, which is why this
+solver calculates RREF on every step. Treating a minefield in this fashion can
+puzzle out almost any solvable scenario. (It should be noted that minesweeper
+is not solveable with 100% confidence 100% of the time)
 # Give it a whirl
 You'll need to download and run the DefuseDivision server  
 `git clone https://github.com/lelandbatey/defuse_division`  
